@@ -67,6 +67,7 @@ set(headers
     src/main.hpp
     src/utilityCore.hpp
 	src/scan_matching.h
+	src/svd3.h
     )
 
 set(sources

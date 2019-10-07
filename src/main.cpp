@@ -86,16 +86,20 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n) {
 
 int main(int argc, char* argv[]) {
 
-	std::string src_filename = "../data/bunny/data/bun000.ply";
-	std::string target_filename = "../data/bunny/data/bun045.ply";
+	std::string src_filename = "../data/bunny/data/bun045.ply";
+	std::string target_filename = "../data/bunny/data/bun000.ply";
 
 	readPointCloud(src_filename, &src_pc, &numSrc);
 	readPointCloud(target_filename, &target_pc, &numTarget);
 	std::cout << numSrc << ' ' << numTarget << '\n';
 
-	//for (int i = 0; i < nSrc; i++) {
-	//	std::cout << src[i].x << ' ' << src[i].y << ' ' << src[i].z << '\n';
-	//}
+	glm::vec3 mean(0, 0, 0);
+	for (int i = 0; i < numSrc; i++) {
+		//std::cout << src[i].x << ' ' << src[i].y << ' ' << src[i].z << '\n';
+		mean += src_pc[i];
+	}
+	mean /= numSrc;
+	std::cout << mean.x << ' ' << mean.y << ' ' << mean.z << '\n';
 
 	if (init(argc, argv)) {
 		mainLoop();
