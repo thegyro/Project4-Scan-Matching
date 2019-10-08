@@ -271,7 +271,7 @@ void multiply(glm::mat3& mat1,
 /**
 * Step the entire N-body simulation by `dt` seconds.
 */
-void ScanMatching::stepSimulationNaive(float dt) {
+void ScanMatching::transformGPUNaive(float dt) {
 	dim3 numBlocksPerGrid((N_SRC + blockSize - 1) / blockSize);
 
 	kernFindCorrespondences << < numBlocksPerGrid, blockSize >> > (N_SRC, dev_src_pc, N_TARGET, dev_target_pc, dev_corres);
@@ -282,16 +282,8 @@ void ScanMatching::stepSimulationNaive(float dt) {
 	glm::vec3 mean_tar = thrust::reduce(thrust::device, dev_corres, dev_corres + N_SRC, glm::vec3(0.0f));
 	mean_tar /= (float)N_SRC;
 
-	//glm::vec3* check = new glm::vec3[N_SRC];
-	//cudaMemcpy(check, dev_corres, N_SRC * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-	//for (int i = 0; i < 5; i++) {
-	//	//std::cout << check[i].x << " " << check[i].y << " " << check[i].z << '\n';
-	//}
-	//std::cout << '\n';
-
-
-	std::cout << mean_src.x << " " << mean_src.y << " " << mean_src.z << '\n';
-	std::cout << mean_tar.x << " " << mean_tar.y << " " << mean_tar.z << '\n';
+	//std::cout << mean_src.x << " " << mean_src.y << " " << mean_src.z << '\n';
+	//std::cout << mean_tar.x << " " << mean_tar.y << " " << mean_tar.z << '\n';
 
 	mean_center_op opX(mean_src);
 	mean_center_op opY(mean_tar);
@@ -302,27 +294,13 @@ void ScanMatching::stepSimulationNaive(float dt) {
 	kernMultiplyYXTranspose<<< numBlocksPerGrid, blockSize >>> (N_SRC, dev_Y_mean_sub, dev_X_mean_sub, dev_M_yxt);
 
 	glm::mat3 host_M = thrust::reduce(thrust::device, dev_M_yxt, dev_M_yxt + N_SRC, glm::mat3(0.0f));
-	//glm::mat3 host_M = glm::transpose(host_MM);
 
-	std::cout << "M" << '\n';
-	printArray2D(host_M);
-
-	//float IM[3][3] = { 0 };
-	//for (int i = 0; i < 3; i++)
-	//	for (int j = 0; j < 3; j++)
-	//		IM[i][j] = host_M[j][i];
-
-	//float U[3][3] = { 0 };
-	//float S[3][3] = { 0 };
-	//float V[3][3] = { 0 };
+	//std::cout << "M" << '\n';
+	//printArray2D(host_M);
 
 	glm::mat3 U(0.0f);
 	glm::mat3 S(0.0f);
 	glm::mat3 V(0.0f);
-	//float host_M[3][3];
-	//float U[3][3];
-	//float S[3][3];
-	//float V[3][3];
 
 	svd(host_M[0][0], host_M[1][0], host_M[2][0],
 		host_M[0][1], host_M[1][1], host_M[2][1],
@@ -337,37 +315,33 @@ void ScanMatching::stepSimulationNaive(float dt) {
 		V[0][1], V[1][1], V[2][1],
 		V[0][2], V[1][2], V[2][2]);
 
-	//glm::mat3 Uglm = glm::mat3(
-	//	U[0][0], U[1][0], U[2][0],
-	//	U[0][1], U[1][1], U[2][1],
-	//	U[0][2], U[1][2], U[2][2]);
-
-	//glm::mat3 Vglm = glm::mat3(
-	//	V[0][0], V[1][0], V[2][0],
-	//	V[0][1], V[1][1], V[2][1],
-	//	V[0][2], V[1][2], V[2][2]);
-
-	//std::cout << "U" << '\n';
-	//printArray2D(Uglm);
-	//std::cout << "V" << '\n';
-	//printArray2D(Vglm);
 
 	glm::mat3 R(0.0f);
-	//multiply(Uglm, glm::transpose(Vglm), R);
-	//R = Uglm *glm::transpose(Vglm);
 	R = U * glm::transpose(V);
 
-	std::cout << "R" << '\n';
-	printArray2D(R);
+	std::cout << glm::determinant(R) << '\n';
+
+	if (glm::determinant(R) < 0) {
+		std::cout << "Hello" << '\n';
+		printArray2D(R);
+		R[2] *= -1;
+		printArray2D(R);
+	}
+
+	//std::cout << "R" << '\n';
+	//printArray2D(R);
 
 	glm::vec3 t = mean_tar - R * mean_src;
 
 
 	thrust::transform(thrust::device, dev_src_pc, dev_src_pc + N_SRC, dev_src_pc_shift, transform_src_op(t, R));
 
-	cudaMemcpy(dev_src_pc, dev_src_pc_shift, N_SRC * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+	//cudaMemcpy(dev_src_pc, dev_src_pc_shift, N_SRC * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+	glm::vec3* tmp = dev_src_pc;
+	dev_src_pc = dev_src_pc_shift;
+	dev_src_pc_shift =tmp;
 
-	cudaDeviceSynchronize();
+	//cudaDeviceSynchronize();
 }
 
 void ScanMatching::endSimulation() {

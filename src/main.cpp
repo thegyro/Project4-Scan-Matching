@@ -84,10 +84,12 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n) {
 	}
 }
 
-int main(int argc, char* argv[]) {
+int main2(int argc, char* argv[]) {
 
-	std::string src_filename = "../data/bunny/data/bun045.ply";
-	std::string target_filename = "../data/bunny/data/bun000.ply";
+	std::string src_filename = "../data/bunny/data/bun000.ply";
+	std::string target_filename = "../data/bunny/data/bun045.ply";
+	//std::string src_filename = "../data/dragon_stand/dragonStandRight_0.ply";
+	//std::string target_filename = "../data/dragon_stand/dragonStandRight_72.ply";
 
 	readPointCloud(src_filename, &src_pc, &numSrc);
 	readPointCloud(target_filename, &target_pc, &numTarget);
@@ -271,7 +273,7 @@ void runCUDA() {
 	cudaGLMapBufferObject((void**)&dptrVertVelocities, boidVBO_velocities);
 
 	// execute the kernel
-	ScanMatching::stepSimulationNaive(DT);
+	ScanMatching::transformGPUNaive(DT);
 
 #if VISUALIZE
 	ScanMatching::copyBoidsToVBO(dptrVertPositions, dptrVertVelocities);

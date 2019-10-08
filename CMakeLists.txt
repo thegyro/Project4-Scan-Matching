@@ -68,6 +68,7 @@ set(headers
     src/utilityCore.hpp
 	src/scan_matching.h
 	src/svd3.h
+	src/kdtree.h
     )
 
 set(sources
@@ -75,6 +76,7 @@ set(sources
     src/main.cpp
     src/utilityCore.cpp
 	src/scan_matching.cu
+	src/kdtree.cpp
     )
 
 list(SORT headers)
