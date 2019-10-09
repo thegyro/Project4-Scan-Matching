@@ -3,12 +3,12 @@
 
 struct TreeNode {
 	glm::vec3 point;
-	TreeNode* left;
-	TreeNode* right;
+	bool good;
+	int depth;
 
-	TreeNode(glm::vec3 p) {
+	TreeNode(glm::vec3 p, bool g, int d) {
 		point = p;
-		left = NULL;
-		right = NULL;
+		good = g;
+		depth = d;
 	}
 };
