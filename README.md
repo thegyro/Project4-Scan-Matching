@@ -119,6 +119,8 @@ When I try to align bunnies which are facing opposite of each other, ICP converg
 </p>
 
 
+From a different view, we can compare the two alignments illustrated below,
+
 Initial Alignment                    |  Final Alignment
 :-------------------------:|:-------------------------:
 ![](data/transform_fail_init.PNG)| 		![](data/transform_fail_final.png)
