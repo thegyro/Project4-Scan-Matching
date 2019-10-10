@@ -112,10 +112,15 @@ Why?
 
 ### Bloopers
 
-When I try to align bunnies which are flipped by 180 degrees, ICP converges to an incorrect alignment as illustrated below.
+When I try to align bunnies which are facing opposite of each other, ICP converges to an incorrect alignment as illustrated below.
 
 <p align='center'>
 	<img src="data/transform_fail.gif" width=500>
 </p>
 
-The final alignment tends to be 
+
+Initial Alignment                    |  Final Alignment
+:-------------------------:|:-------------------------:
+![](data/transform_fail_init.PNG)| 		![](data/transform_fail_final.png)
+
+The final alignment tends to be flipped by 90 degrees. Though I am not completely sure why this is the case, I guess it's possible since ICP is not guaranteed to converge to a global minimum. Closest-point heuristic need not always give the correct alignment and if we after few iterations it's totally possible that the closes points don't change and we converge prematurely. 
