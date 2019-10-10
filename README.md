@@ -68,7 +68,7 @@ The final alignment from a different view is presented below
 
 Dragon Alignment                    |  Bunny Alignment
 :-------------------------:|:-------------------------:
-![](data/dragon_still.png)| 		![](data/final45.png)
+![](data/dragon_still.PNG)| 		![](data/final45.PNG)
 
 
 ### Efficient Neighbour Search
