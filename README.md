@@ -17,7 +17,7 @@ Bunny Transformation                    |  Happy Buddha Transformation
 
 
 ### Introduction
-Suppose we have two sets of point clouds representing an object from two different views or coordinate axes, how we do transform one of the point clouds so that it perfectly aligns with the other one? This is what we try to achieve in scan matching. Precisely, the objective is to estimate one transformation matrix  with which we can rotate, translate, scale the source point cloud so that it's as close as possible to the target point cloud. In reality we can have many types of transformations like affine, homography etc, but for this project our focus is on rigid body transformation.
+Suppose we have two sets of point clouds representing an object from two different views or coordinate axes, how can we transform one of the point clouds so that it perfectly aligns with the other one? This is what we try to achieve in scan matching. Precisely, the objective is to estimate one transformation matrix  with which we can rotate, translate, scale the source point cloud so that it's as close as possible to the target point cloud. In reality we can have many types of transformations like affine, homography etc, but for this project our focus is on rigid body transformation.
 
 ### Orthogonal Procrustes Problem
 
