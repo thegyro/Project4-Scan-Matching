@@ -25,6 +25,11 @@ std::uniform_real_distribution<> dis(-0.01, 0.01);
 glm::vec3 *src_pc, *target_pc;
 int numSrc, numTarget;
 
+glm::vec3 translate(0.0f, 0.0f, 0.3f);
+glm::vec3 rotate(-1.0f, -0.5f, 0.3f);
+glm::vec3 scale(1.0f, 1.0f, 1.0f);
+glm::mat4 transform;
+
 void printArray2D(float *X, int nR, int nC) {
 	for (int i = 0; i < nR; i++) {
 		for (int j = 0; j < nC; j++)
@@ -75,7 +80,9 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n) {
 			ss >> buf;
 			float z = std::stof(buf);
 
-			(*points)[i] = glm::vec3(x, y, z);
+			//glm::vec4 tp = transform * glm::vec4(20.0f*glm::vec3(x, y, z), 1.0f);
+			//(*points)[i] = glm::vec3(tp[0], tp[1], tp[2]);
+			(*points)[i] = 20.0f*glm::vec3(x, y, z);
 
 			//std::cout << (*X)[i * 3 + 0] << ' ' << (*X)[i * 3 + 1] << ' ' << (*X)[i * 3 + 2] << '\n';
 		}
@@ -84,12 +91,23 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n) {
 	}
 }
 
-int main2(int argc, char* argv[]) {
+glm::mat4 buildTransformationMatrix(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale) {
+    glm::mat4 translationMat = glm::translate(glm::mat4(), translation);
+    glm::mat4 rotationMat =   glm::rotate(glm::mat4(), rotation.x * (float) PI / 180, glm::vec3(1, 0, 0));
+    rotationMat = rotationMat * glm::rotate(glm::mat4(), rotation.y * (float) PI / 180, glm::vec3(0, 1, 0));
+    rotationMat = rotationMat * glm::rotate(glm::mat4(), rotation.z * (float) PI / 180, glm::vec3(0, 0, 1));
+    glm::mat4 scaleMat = glm::scale(glm::mat4(), scale);
+    return translationMat * rotationMat * scaleMat;
+}
+
+int main(int argc, char* argv[]) {
 
 	std::string src_filename = "../data/bunny/data/bun000.ply";
 	std::string target_filename = "../data/bunny/data/bun045.ply";
 	//std::string src_filename = "../data/dragon_stand/dragonStandRight_0.ply";
 	//std::string target_filename = "../data/dragon_stand/dragonStandRight_72.ply";
+
+	transform = buildTransformationMatrix(translate, rotate, scale);
 
 	readPointCloud(src_filename, &src_pc, &numSrc);
 	readPointCloud(target_filename, &target_pc, &numTarget);

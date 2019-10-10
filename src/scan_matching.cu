@@ -6,6 +6,7 @@
 #include "utilityCore.hpp"
 #include "scan_matching.h"
 #include "svd3.h"
+#include "kdtree.h"
 
 #ifndef imax
 #define imax( a, b ) ( ((a) > (b)) ? (a) : (b) )
@@ -16,6 +17,9 @@
 #endif
 
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg, __LINE__)
+
+#define NULL_VEC -7879
+
 
 void printArray2D(glm::mat3& X) {
 	for (int i = 0; i < 3; i++) {
@@ -40,6 +44,13 @@ void checkCUDAError(const char *msg, int line = -1) {
 	}
 }
 
+struct TreeNode{
+	int pointIdx;
+	int parentIdx;
+	bool good;
+	int depth;
+};
+
 
 /*****************
 * Configuration *
@@ -49,12 +60,16 @@ void checkCUDAError(const char *msg, int line = -1) {
 #define blockSize 128
 
 /*! Size of the starting area in simulation space. */
-#define scene_scale 0.1f
+#define scene_scale 1
 
 
 glm::vec3 *dev_src_pc;
 glm::vec3 *dev_src_pc_shift;
 glm::vec3 *dev_target_pc;
+
+glm::vec3 *dev_kdTreeTarget;
+TreeNode *host_stack;
+TreeNode *dev_stack;
 
 glm::vec3 *dev_X_mean_sub;
 glm::vec3 *dev_Y_mean_sub;
@@ -66,11 +81,12 @@ glm::mat3* dev_M_yxt;
 int N_SRC;
 int N_TARGET;
 
+int STACK_SIZE;
+
 
 /******************
 * initSimulation *
 ******************/
-
 __global__ void kernResetBuffer(int N, glm::vec3 *buffer, glm::vec3 value) {
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (index < N) {
@@ -97,7 +113,21 @@ void ScanMatching::initSimulation(int N, glm::vec3* src_pc, int M, glm::vec3* ta
 
 	N_SRC = N;
 	N_TARGET = M;
+	
+	STACK_SIZE =  (int)ceil(log2(N_TARGET)) + 1;
+	printf("STACK SIZE %d\n", STACK_SIZE);
 
+	cudaMalloc((void **)&dev_stack, N_SRC * STACK_SIZE * sizeof(TreeNode));
+	checkCUDAErrorWithLine("cudaMalloc failed!");
+
+	int treeSize = 1 << ((int)ceil(log2(N_TARGET)) + 1);
+	glm::vec3* kdTreeTarget = new glm::vec3[treeSize];
+	constructKDTree(target_pc, N_TARGET, kdTreeTarget, treeSize);
+
+	std::cout << "KD Tree Built sucessfully" << '\n';
+	cudaMalloc((void **)&dev_kdTreeTarget, treeSize * sizeof(glm::vec3));
+	cudaMemcpy(dev_kdTreeTarget, kdTreeTarget, treeSize * sizeof(glm::vec3), cudaMemcpyHostToDevice);
+	checkCUDAErrorWithLine("cudaMalloc failed!");
 
 	cudaDeviceSynchronize();
 }
@@ -162,24 +192,6 @@ void ScanMatching::copyBoidsToVBO(float *vbodptr_positions, float *vbodptr_veloc
 	cudaDeviceSynchronize();
 }
 
-//struct sum
-//{
-//	__host__ __device__
-//		glm::vec3 operator()(const glm::vec3& v1, const glm::vec3& v2){
-//		return v1 + v2;
-//	}
-//};
-
-
-/******************
-* stepSimulation *
-******************/
-
-
-__device__ int gridIndex3Dto1D(int x, int y, int z, int gridResolution) {
-	return x + y * gridResolution + z * gridResolution * gridResolution;
-}
-
 __global__ void kernFindCorrespondences(int numSrc, glm::vec3* dev_src, int numTarget, glm::vec3* dev_target, glm::vec3* dev_corres) {
 	int idx = threadIdx.x + (blockIdx.x * blockDim.x);
 
@@ -199,6 +211,85 @@ __global__ void kernFindCorrespondences(int numSrc, glm::vec3* dev_src, int numT
 	dev_corres[idx] = dev_target[minIdx];
 }
 
+__device__ TreeNode createNode(int pointIdx, int parentIdx, bool good, int depth) {
+	TreeNode node;
+	node.pointIdx = pointIdx;
+	node.parentIdx = parentIdx;
+	node.good = good;
+	node.depth = depth;
+	return node; 
+}
+
+__global__ void kernFindCorrespondencesKDTree(
+	int numSrc, glm::vec3* dev_src, 
+	int numTarget, glm::vec3* kdTreeTarget, 
+	glm::vec3* dev_corres, 
+	TreeNode* stack, int stackSize) {
+
+	int tidx = threadIdx.x + (blockIdx.x * blockDim.x);
+
+	if (tidx >= numSrc) return;
+
+	int bestIdx = 0;
+	float  bestDistance = LONG_MAX;
+
+	//push root onto stack
+	int root_idx = 0;
+	int top = 0;
+
+	stack[tidx*stackSize + top] = createNode(root_idx, -1, true, 0);
+	
+	glm::vec3 queryPoint = dev_src[tidx];
+
+	while (top != -1) {
+
+		// pop  from stack
+		TreeNode curNode = stack[tidx*stackSize + top--];
+
+		int curIdx = curNode.pointIdx;
+		glm::vec3 curPoint = kdTreeTarget[curIdx];
+
+		if (curPoint.z == NULL_VEC) continue;
+
+		int curDepth = curNode.depth;
+		int axis = curDepth % 3;
+		bool good = curNode.good;
+
+		if (!good) {
+			// check if bad side should be searched
+			int parentIdx = curNode.parentIdx;
+			glm::vec3 parentPoint = kdTreeTarget[parentIdx];
+			int parentAxis = curNode.depth % 3;
+			if (abs(parentPoint[parentAxis] - queryPoint[parentAxis]) > bestDistance) continue;
+		}
+
+		float curDistance = glm::distance(curPoint, queryPoint);
+		if ( curDistance < bestDistance) {
+			bestIdx = curIdx;
+			bestDistance = curDistance;
+		}
+
+		int goodIdx, badIdx;
+		if (queryPoint[axis] < curPoint[axis]) {
+			goodIdx = 2 * curIdx + 1; // search left child first
+			badIdx = 2 * curIdx + 2; // search right child second
+		}
+		else {
+			goodIdx = 2 * curIdx + 2; // search right child first
+			badIdx = 2 * curIdx + 1; // search left child second
+		}
+
+		// push bad node first and good node later
+		TreeNode goodNode = createNode(goodIdx, curIdx, true, curDepth + 1);
+		TreeNode badNode = createNode(badIdx, curIdx, false, curDepth + 1);
+		
+		stack[tidx*stackSize + ++top] = badNode;
+		stack[tidx*stackSize + ++top] = goodNode;
+	}
+
+	dev_corres[tidx] = kdTreeTarget[bestIdx];
+}
+
 /*
 	Calculate Y (target 3 x N) x X.T (source N x 3) result 3 x 3 
 */
@@ -216,10 +307,6 @@ __global__ void kernMultiplyYXTranspose(int N, glm::vec3* tars, glm::vec3* srcs,
 	//outM[idx] = glm::mat3(t.x*s.x, t.x*s.y, t.x*s.z,
 	//					t.y*s.x, t.y*s.y, t.y*s.z,
 	//					t.z*s.x, t.z*s.y, t.z*s.z);
-
-}
-
-__global__ void kernTranspose(int) {
 
 }
 
@@ -249,32 +336,12 @@ struct transform_src_op
 };
 
 
-void multiply(glm::mat3& mat1,
-	glm::mat3& mat2,
-	glm::mat3& res)
-{
-	int i, j, k;
-	for (i = 0; i < 3; i++)
-	{
-		for (j = 0; j < 3; j++)
-		{
-			res[i][j] = 0;
-			for (k = 0; k < 3; k++)
-				res[i][j] += mat1[i][k] *
-				mat2[k][j];
-		}
-	}
-}
-
-
-
-/**
-* Step the entire N-body simulation by `dt` seconds.
-*/
 void ScanMatching::transformGPUNaive(float dt) {
 	dim3 numBlocksPerGrid((N_SRC + blockSize - 1) / blockSize);
 
-	kernFindCorrespondences << < numBlocksPerGrid, blockSize >> > (N_SRC, dev_src_pc, N_TARGET, dev_target_pc, dev_corres);
+	kernFindCorrespondencesKDTree <<< numBlocksPerGrid, blockSize >>> (N_SRC, dev_src_pc, N_TARGET, dev_kdTreeTarget, dev_corres, dev_stack, STACK_SIZE);
+
+	//kernFindCorrespondences << < numBlocksPerGrid, blockSize >> > (N_SRC, dev_src_pc, N_TARGET, dev_target_pc, dev_corres);
 
 	glm::vec3 mean_src = thrust::reduce(thrust::device, dev_src_pc, dev_src_pc + N_SRC, glm::vec3(0.0f));
 	mean_src /= (float) N_SRC;
@@ -319,7 +386,7 @@ void ScanMatching::transformGPUNaive(float dt) {
 	glm::mat3 R(0.0f);
 	R = U * glm::transpose(V);
 
-	std::cout << glm::determinant(R) << '\n';
+	//std::cout << glm::determinant(R) << '\n';
 
 	if (glm::determinant(R) < 0) {
 		std::cout << "Hello" << '\n';
@@ -328,8 +395,8 @@ void ScanMatching::transformGPUNaive(float dt) {
 		printArray2D(R);
 	}
 
-	//std::cout << "R" << '\n';
-	//printArray2D(R);
+	std::cout << "R" << '\n';
+	printArray2D(R);
 
 	glm::vec3 t = mean_tar - R * mean_src;
 
@@ -349,5 +416,4 @@ void ScanMatching::endSimulation() {
 
 	cudaFree(dev_src_pc);
 	cudaFree(dev_target_pc);
-
 }
