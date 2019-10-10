@@ -180,12 +180,12 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n, boo
 
 int main(int argc, char* argv[]) {
 
-	//std::string src_filename = "../data/bunny/data/bun000.ply";
+	std::string src_filename = "../data/bunny/data/bun000.ply";
 	//std::string target_filename = "../data/bunny/data/bun180.ply";
 	//std::string src_filename = "../data/dragon_stand/dragonStandRight_0.ply";
 	//std::string target_filename = "../data/dragon_stand/dragonStandRight_48.ply";
-	std::string src_filename = "../data/happy_stand/happyStandRight_0.ply";
-	std::string target_filename = "../data/happy_stand/happyStandRight_48.ply";
+	//std::string src_filename = "../data/happy_stand/happyStandRight_0.ply";
+	//std::string target_filename = "../data/happy_stand/happyStandRight_48.ply";
 
 
 	//transformSrc = buildTransformationMatrix(translate1, rotate1, scale1);
