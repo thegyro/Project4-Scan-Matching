@@ -163,12 +163,12 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n, boo
 				glm::vec3 p = glm::vec3(x, y, z);
 				glm::vec4 tp = transformSrc * glm::vec4(p, 1);
 				
-				(*points)[i] = glm::vec3(tp);
+				(*points)[i] = glm::vec3(p);
 			}
 			else {
 				glm::vec3 p = glm::vec3(x, y, z);
 				glm::vec4 tp = transformTar * glm::vec4(p, 1.0);
-				(*points)[i] = glm::vec3(tp);
+				(*points)[i] = glm::vec3(p);
 			}
 
 			//std::cout << (*X)[i * 3 + 0] << ' ' << (*X)[i * 3 + 1] << ' ' << (*X)[i * 3 + 2] << '\n';
@@ -180,19 +180,19 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n, boo
 
 int main(int argc, char* argv[]) {
 
-	//std::string src_filename = "../data/bunny/data/bun000.ply";
-	//std::string target_filename = "../data/bunny/data/bun180.ply";
+	std::string src_filename = "../data/bunny/data/bun000.ply";
+	std::string target_filename = "../data/bunny/data/bun180.ply";
 	//std::string src_filename = "../data/dragon_stand/dragonStandRight_0.ply";
 	//std::string target_filename = "../data/dragon_stand/dragonStandRight_48.ply";
-	std::string src_filename = "../data/happy_stand/happyStandRight_0.ply";
-	std::string target_filename = "../data/happy_stand/happyStandRight_48.ply";
+	//std::string src_filename = "../data/happy_stand/happyStandRight_0.ply";
+	//std::string target_filename = "../data/happy_stand/happyStandRight_48.ply";
 
 
 	//transformSrc = buildTransformationMatrix(translate1, rotate1, scale1);
 	//transformTar = buildTransformationMatrix(translate2, rotate2, scale2);
 
 	readPointCloud(src_filename, &src_pc, &numSrc, true);
-	readPointCloud(src_filename, &target_pc, &numTarget, false);
+	readPointCloud(target_filename, &target_pc, &numTarget, false);
 	std::cout << numSrc << ' ' << numTarget << '\n';
 
 	glm::vec3 mean(0, 0, 0);
@@ -375,7 +375,7 @@ void runCUDA() {
 	cudaGLMapBufferObject((void**)&dptrVertVelocities, boidVBO_velocities);
 
 	// execute the kernel
-	ScanMatching::transformGPU(DT);
+	//ScanMatching::transformGPU(DT);
 
 #if VISUALIZE
 	ScanMatching::copyBoidsToVBO(dptrVertPositions, dptrVertVelocities);
