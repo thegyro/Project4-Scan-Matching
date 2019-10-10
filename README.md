@@ -62,7 +62,7 @@ Dragon Transformation                    |  Bunny Transformation
 :-------------------------:|:-------------------------:
 ![](data/transform_dragon.gif)| 		![](data/transform2.gif)
 
-The above depicts the transformation of the [Chinese Dragon and Bunny from Stanford](http://graphics.stanford.edu/data/3Dscanrep). Notice how the white dragon moves closer towards the the red dragon with time. Here are trying to align the dragon from two different views. The number of points in source and target are different (there are missing points in the source) which is why we don't see a complete overlap. I couldn't capture the transformation from a more friendly view due to some issues with the way the points are rendered using OpenGL.
+The above depicts the transformation of the [Chinese Dragon and Bunny from Stanford](http://graphics.stanford.edu/data/3Dscanrep). Notice how the white dragon moves closer towards the the red dragon with time. Here we are trying to align the dragon from two different views. The number of points in source and target are different (there are missing points in the source) which is why we don't see a complete overlap. I couldn't capture the transformation from a more friendly view due to some issues with the way the points are rendered using OpenGL.
 
 The final alignment from a different view is presented below
 
