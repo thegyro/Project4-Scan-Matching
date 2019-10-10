@@ -12,6 +12,9 @@ obj_info num_rows 268
 obj_info optimum_std_dev 1.600000
 obj_info echo_lgincr 0.000500
 obj_info echo_frames 512
+bye
+bye
+bye
 element vertex 22092
 property float x
 property float y

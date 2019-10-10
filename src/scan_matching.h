@@ -11,7 +11,8 @@
 
 namespace ScanMatching {
 	void initSimulation(int N1, glm::vec3* src_pc, int N2, glm::vec3* target_pc);
-	void transformGPUNaive(float dt);
+	void transformGPU(float dt);
+	void transformCPU(float dt);
 	void copyBoidsToVBO(float *vbodptr_positions, float *vbodptr_velocities);
 
 	void endSimulation();

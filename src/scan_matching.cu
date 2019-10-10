@@ -8,6 +8,9 @@
 #include "svd3.h"
 #include "kdtree.h"
 
+#define KD_TREE 0
+#define NAIVE 1
+
 #ifndef imax
 #define imax( a, b ) ( ((a) > (b)) ? (a) : (b) )
 #endif
@@ -60,7 +63,8 @@ struct TreeNode{
 #define blockSize 128
 
 /*! Size of the starting area in simulation space. */
-#define scene_scale 1
+#define scene_scale 0.1
+
 
 
 glm::vec3 *dev_src_pc;
@@ -113,7 +117,8 @@ void ScanMatching::initSimulation(int N, glm::vec3* src_pc, int M, glm::vec3* ta
 
 	N_SRC = N;
 	N_TARGET = M;
-	
+
+#if KD_TREE
 	STACK_SIZE =  (int)ceil(log2(N_TARGET)) + 1;
 	printf("STACK SIZE %d\n", STACK_SIZE);
 
@@ -128,7 +133,7 @@ void ScanMatching::initSimulation(int N, glm::vec3* src_pc, int M, glm::vec3* ta
 	cudaMalloc((void **)&dev_kdTreeTarget, treeSize * sizeof(glm::vec3));
 	cudaMemcpy(dev_kdTreeTarget, kdTreeTarget, treeSize * sizeof(glm::vec3), cudaMemcpyHostToDevice);
 	checkCUDAErrorWithLine("cudaMalloc failed!");
-
+#endif
 	cudaDeviceSynchronize();
 }
 
@@ -190,6 +195,25 @@ void ScanMatching::copyBoidsToVBO(float *vbodptr_positions, float *vbodptr_veloc
 	kernCopyVelocitiesToVBO << <fullBlocksPerGrid, blockSize >> > (N_SRC, N_TARGET, vbodptr_velocities, scene_scale);
 	checkCUDAErrorWithLine("copyBoidsToVBO failed!");
 	cudaDeviceSynchronize();
+}
+
+
+void findCorrespondences(int numSrc, glm::vec3* dev_src, int numTarget, glm::vec3* dev_target, glm::vec3* dev_corres) {
+
+	for (int idx = 0; idx < numSrc; idx++) {
+		glm::vec3 me = dev_src[idx];
+		int minIdx = 0;
+		float minDistance = glm::distance(me, dev_target[0]);
+		for (int i = 1; i < numTarget; i++) {
+			float d = glm::distance(me, dev_target[i]);
+			if (d < minDistance) {
+				minIdx = i;
+				minDistance = d;
+			}
+		}
+
+		dev_corres[idx] = dev_target[minIdx];
+	}
 }
 
 __global__ void kernFindCorrespondences(int numSrc, glm::vec3* dev_src, int numTarget, glm::vec3* dev_target, glm::vec3* dev_corres) {
@@ -336,21 +360,33 @@ struct transform_src_op
 };
 
 
-void ScanMatching::transformGPUNaive(float dt) {
+void ScanMatching::transformCPU(float dt) {
+
+
+}
+
+
+void ScanMatching::transformGPU(float dt) {
 	dim3 numBlocksPerGrid((N_SRC + blockSize - 1) / blockSize);
 
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start);
+
+#if KD_TREE
 	kernFindCorrespondencesKDTree <<< numBlocksPerGrid, blockSize >>> (N_SRC, dev_src_pc, N_TARGET, dev_kdTreeTarget, dev_corres, dev_stack, STACK_SIZE);
+#endif
 
-	//kernFindCorrespondences << < numBlocksPerGrid, blockSize >> > (N_SRC, dev_src_pc, N_TARGET, dev_target_pc, dev_corres);
-
+#if NAIVE
+	kernFindCorrespondences << < numBlocksPerGrid, blockSize >> > (N_SRC, dev_src_pc, N_TARGET, dev_target_pc, dev_corres);
+#endif 
 	glm::vec3 mean_src = thrust::reduce(thrust::device, dev_src_pc, dev_src_pc + N_SRC, glm::vec3(0.0f));
 	mean_src /= (float) N_SRC;
 
 	glm::vec3 mean_tar = thrust::reduce(thrust::device, dev_corres, dev_corres + N_SRC, glm::vec3(0.0f));
 	mean_tar /= (float)N_SRC;
-
-	//std::cout << mean_src.x << " " << mean_src.y << " " << mean_src.z << '\n';
-	//std::cout << mean_tar.x << " " << mean_tar.y << " " << mean_tar.z << '\n';
 
 	mean_center_op opX(mean_src);
 	mean_center_op opY(mean_tar);
@@ -361,9 +397,6 @@ void ScanMatching::transformGPUNaive(float dt) {
 	kernMultiplyYXTranspose<<< numBlocksPerGrid, blockSize >>> (N_SRC, dev_Y_mean_sub, dev_X_mean_sub, dev_M_yxt);
 
 	glm::mat3 host_M = thrust::reduce(thrust::device, dev_M_yxt, dev_M_yxt + N_SRC, glm::mat3(0.0f));
-
-	//std::cout << "M" << '\n';
-	//printArray2D(host_M);
 
 	glm::mat3 U(0.0f);
 	glm::mat3 S(0.0f);
@@ -386,29 +419,23 @@ void ScanMatching::transformGPUNaive(float dt) {
 	glm::mat3 R(0.0f);
 	R = U * glm::transpose(V);
 
-	//std::cout << glm::determinant(R) << '\n';
-
-	if (glm::determinant(R) < 0) {
-		std::cout << "Hello" << '\n';
-		printArray2D(R);
-		R[2] *= -1;
-		printArray2D(R);
-	}
-
-	std::cout << "R" << '\n';
-	printArray2D(R);
-
 	glm::vec3 t = mean_tar - R * mean_src;
 
 
 	thrust::transform(thrust::device, dev_src_pc, dev_src_pc + N_SRC, dev_src_pc_shift, transform_src_op(t, R));
 
-	//cudaMemcpy(dev_src_pc, dev_src_pc_shift, N_SRC * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+
+	printf("%.4f\n", milliseconds);
+
 	glm::vec3* tmp = dev_src_pc;
 	dev_src_pc = dev_src_pc_shift;
 	dev_src_pc_shift =tmp;
 
-	//cudaDeviceSynchronize();
+	cudaDeviceSynchronize();
 }
 
 void ScanMatching::endSimulation() {

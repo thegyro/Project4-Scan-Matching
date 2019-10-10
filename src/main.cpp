@@ -11,6 +11,8 @@
 #include <glm/glm.hpp>
 #include "main.hpp"
 
+#include <chrono>
+#include <thread>
 
 #define VISUALIZE 1
 
@@ -22,13 +24,45 @@ std::uniform_real_distribution<> dis(-0.01, 0.01);
 
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg)
 
+
+glm::mat4 buildTransformationMatrix(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale) {
+	glm::mat4 translationMat = glm::translate(glm::mat4(), translation);
+	glm::mat4 rotationMat = glm::rotate(glm::mat4(), rotation.x * (float)PI / 180, glm::vec3(1, 0, 0));
+	rotationMat = rotationMat * glm::rotate(glm::mat4(), rotation.y * (float)PI / 180, glm::vec3(0, 1, 0));
+	rotationMat = rotationMat * glm::rotate(glm::mat4(), rotation.z * (float)PI / 180, glm::vec3(0, 0, 1));
+	glm::mat4 scaleMat = glm::scale(glm::mat4(), scale);
+	return translationMat * rotationMat * scaleMat;
+}
+
+
 glm::vec3 *src_pc, *target_pc;
 int numSrc, numTarget;
 
-glm::vec3 translate(0.0f, 0.0f, 0.3f);
-glm::vec3 rotate(-1.0f, -0.5f, 0.3f);
-glm::vec3 scale(1.0f, 1.0f, 1.0f);
-glm::mat4 transform;
+//glm::vec3 translate1(0.1f, 0.1f, 0.2f);
+//glm::vec3 rotate1(-0.5f, 0.5f, 0.3f);
+//glm::vec3 scale1(1.5f, 1.5f, 1.5f);
+//glm::mat4 transformSrc;
+//
+//glm::vec3 translate2(0.0f, 0.0f, 0.0f);
+//glm::vec3 rotate2(0.0f, 0.0f, 0.0f);
+//glm::vec3 scale2(1.5f, 1.5f, 1.5f);
+//glm::mat4 transformTar;
+
+using namespace std::this_thread; // sleep_for, sleep_until
+using namespace std::chrono;
+
+glm::vec3 rotation(-0.5f, 0.5f, 0.3f);
+glm::vec3 translate(0.1f, 0.1f, 0.2f);
+glm::vec3 scale(2.0f, 2.0f, 2.0f);
+glm::mat4 transformSrc = buildTransformationMatrix(translate, rotation, scale);
+
+glm::vec3 rotationTar(-1.5f, 0.5f, 0.3f);
+glm::vec3 translateTar(0.1f, 0.2f, 0.2f);
+glm::vec3 scaleTar(2.0f, 2.0f, 2.0f);
+glm::mat4 transformTar = buildTransformationMatrix(translateTar, rotationTar, scaleTar);
+
+
+bool wait = true;
 
 void printArray2D(float *X, int nR, int nC) {
 	for (int i = 0; i < nR; i++) {
@@ -38,7 +72,47 @@ void printArray2D(float *X, int nR, int nC) {
 	}
 }
 
-void readPointCloud(const std::string& filename, glm::vec3 **points, int* n) {
+std::vector<std::string> tokenizeString(std::string str) {
+	std::stringstream strstr(str);
+	std::istream_iterator<std::string> it(strstr);
+	std::istream_iterator<std::string> end;
+	std::vector<std::string> results(it, end);
+	return results;
+}
+
+std::istream& safeGetline(std::istream& is, std::string& t) {
+	t.clear();
+
+	// The characters in the stream are read one-by-one using a std::streambuf.
+	// That is faster than reading them one-by-one using the std::istream.
+	// Code that uses streambuf this way must be guarded by a sentry object.
+	// The sentry object performs various tasks,
+	// such as thread synchronization and updating the stream state.
+
+	std::istream::sentry se(is, true);
+	std::streambuf* sb = is.rdbuf();
+
+	for (;;) {
+		int c = sb->sbumpc();
+		switch (c) {
+		case '\n':
+			return is;
+		case '\r':
+			if (sb->sgetc() == '\n')
+				sb->sbumpc();
+			return is;
+		case EOF:
+			// Also handle the case when the last line has no line ending
+			if (t.empty())
+				is.setstate(std::ios::eofbit);
+			return is;
+		default:
+			t += (char)c;
+		}
+	}
+}
+
+void readPointCloud(const std::string& filename, glm::vec3 **points, int* n, bool src) {
 
 	std::ifstream myfile(filename);
 	std::string line;
@@ -71,18 +145,31 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n) {
 
 		for (int i = 0; i < numVertex; i++) {
 			std::getline(myfile, line);
-			std::istringstream ss(line);
-			std::string buf;
-			ss >> buf;
-			float x = std::stof(buf);
-			ss >> buf;
-			float y = std::stof(buf);
-			ss >> buf;
-			float z = std::stof(buf);
+			//std::istringstream ss(line);
+			//std::string buf;
+			//ss >> buf;
+			//float x = atof(buf.c_str());
+			//ss >> buf;
+			//float y = atof(buf.c_str());
+			//ss >> buf;
+			//float z = atof(buf.c_str());
 
-			//glm::vec4 tp = transform * glm::vec4(20.0f*glm::vec3(x, y, z), 1.0f);
-			//(*points)[i] = glm::vec3(tp[0], tp[1], tp[2]);
-			(*points)[i] = 20.0f*glm::vec3(x, y, z);
+			std::vector<std::string> tokens = tokenizeString(line);
+			float x = atof(tokens[0].c_str());
+			float y = atof(tokens[1].c_str());
+			float z = atof(tokens[2].c_str());
+
+			if (src == 0) {
+				glm::vec3 p = glm::vec3(x, y, z);
+				glm::vec4 tp = transformSrc * glm::vec4(p, 1);
+				
+				(*points)[i] = glm::vec3(tp);
+			}
+			else {
+				glm::vec3 p = glm::vec3(x, y, z);
+				glm::vec4 tp = transformTar * glm::vec4(p, 1.0);
+				(*points)[i] = glm::vec3(tp);
+			}
 
 			//std::cout << (*X)[i * 3 + 0] << ' ' << (*X)[i * 3 + 1] << ' ' << (*X)[i * 3 + 2] << '\n';
 		}
@@ -91,26 +178,21 @@ void readPointCloud(const std::string& filename, glm::vec3 **points, int* n) {
 	}
 }
 
-glm::mat4 buildTransformationMatrix(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale) {
-    glm::mat4 translationMat = glm::translate(glm::mat4(), translation);
-    glm::mat4 rotationMat =   glm::rotate(glm::mat4(), rotation.x * (float) PI / 180, glm::vec3(1, 0, 0));
-    rotationMat = rotationMat * glm::rotate(glm::mat4(), rotation.y * (float) PI / 180, glm::vec3(0, 1, 0));
-    rotationMat = rotationMat * glm::rotate(glm::mat4(), rotation.z * (float) PI / 180, glm::vec3(0, 0, 1));
-    glm::mat4 scaleMat = glm::scale(glm::mat4(), scale);
-    return translationMat * rotationMat * scaleMat;
-}
-
 int main(int argc, char* argv[]) {
 
-	std::string src_filename = "../data/bunny/data/bun000.ply";
-	std::string target_filename = "../data/bunny/data/bun045.ply";
+	//std::string src_filename = "../data/bunny/data/bun000.ply";
+	//std::string target_filename = "../data/bunny/data/bun180.ply";
 	//std::string src_filename = "../data/dragon_stand/dragonStandRight_0.ply";
-	//std::string target_filename = "../data/dragon_stand/dragonStandRight_72.ply";
+	//std::string target_filename = "../data/dragon_stand/dragonStandRight_48.ply";
+	std::string src_filename = "../data/happy_stand/happyStandRight_0.ply";
+	std::string target_filename = "../data/happy_stand/happyStandRight_48.ply";
 
-	transform = buildTransformationMatrix(translate, rotate, scale);
 
-	readPointCloud(src_filename, &src_pc, &numSrc);
-	readPointCloud(target_filename, &target_pc, &numTarget);
+	//transformSrc = buildTransformationMatrix(translate1, rotate1, scale1);
+	//transformTar = buildTransformationMatrix(translate2, rotate2, scale2);
+
+	readPointCloud(src_filename, &src_pc, &numSrc, true);
+	readPointCloud(src_filename, &target_pc, &numTarget, false);
 	std::cout << numSrc << ' ' << numTarget << '\n';
 
 	glm::vec3 mean(0, 0, 0);
@@ -119,7 +201,7 @@ int main(int argc, char* argv[]) {
 		mean += src_pc[i];
 	}
 	mean /= numSrc;
-	std::cout << mean.x << ' ' << mean.y << ' ' << mean.z << '\n';
+	//std::cout << mean.x << ' ' << mean.y << ' ' << mean.z << '\n';
 
 	if (init(argc, argv)) {
 		mainLoop();
@@ -210,6 +292,8 @@ bool init(int argc, char **argv) {
 
 	glEnable(GL_DEPTH_TEST);
 
+	
+
 	return true;
 }
 
@@ -291,7 +375,7 @@ void runCUDA() {
 	cudaGLMapBufferObject((void**)&dptrVertVelocities, boidVBO_velocities);
 
 	// execute the kernel
-	ScanMatching::transformGPUNaive(DT);
+	ScanMatching::transformGPU(DT);
 
 #if VISUALIZE
 	ScanMatching::copyBoidsToVBO(dptrVertPositions, dptrVertVelocities);
@@ -299,6 +383,8 @@ void runCUDA() {
 	// unmap buffer object
 	cudaGLUnmapBufferObject(boidVBO_positions);
 	cudaGLUnmapBufferObject(boidVBO_velocities);
+
+
 }
 
 void mainLoop() {
@@ -326,6 +412,14 @@ void mainLoop() {
 		ss << std::fixed << fps;
 		ss << " fps] " << deviceName;
 		glfwSetWindowTitle(window, ss.str().c_str());
+
+		if (wait) {
+			//sleep_for(milliseconds(5000));
+			wait = false;
+		}
+		else {
+			//sleep_for(milliseconds(700));
+		}
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
